@@ -1,0 +1,30 @@
+## Interface: 16001
+## Title: |cff3987e5Corpo|rGreed
+## Notes: Your own AH toolkit: full scans, price history, deals finder, sell/smelt/craft advisor, best crafts, shopping list, sales log.
+## Author: Ruff
+## Version: 3.0
+## OptionalDeps: Auctionator
+## SavedVariables: CorpoGreedDB
+
+Seed.lua
+Locale.lua
+Locales\Locales.xml
+Core.lua
+Scan.lua
+Inventory.lua
+Crafting.lua
+UI.lua
+Chart.lua
+Disenchant.lua
+Advisor.lua
+Deals.lua
+Shopping.lua
+Ledger.lua
+Farming.lua
+Session.lua
+Finance.lua
+Settings.lua
+BestCrafts.lua
+Trainer.lua
+Sell.lua
+Donate.lua

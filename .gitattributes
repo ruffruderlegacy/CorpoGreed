@@ -1,0 +1,6 @@
+# Normalize line endings: keep LF in the repo, auto-convert in the working copy
+* text=auto eol=lf
+*.lua text eol=lf
+*.toc text eol=lf
+*.xml text eol=lf
+*.md text eol=lf
