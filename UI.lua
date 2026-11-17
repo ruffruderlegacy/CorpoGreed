@@ -371,7 +371,8 @@ local function PricesPage(page)
   end
 
   local c = CreateFrame("Frame", nil, right, "BackdropTemplate"); Skin(c, 0.35)
-  c:SetPoint("TOPLEFT", 64, -48); c:SetPoint("BOTTOMRIGHT", -4, 84)
+  -- price axis now lives on the RIGHT (TradingView-style): small left gutter, wider right gutter for labels/tags
+  c:SetPoint("TOPLEFT", 8, -48); c:SetPoint("BOTTOMRIGHT", -52, 84)
   c.lines, c.dots, c.grid = {}, {}, {}
   for k, frac in ipairs({ 0.25, 0.5, 0.75 }) do
     local g = c:CreateTexture(nil, "BORDER"); g:SetColorTexture(1, 1, 1, 0.06); g:SetHeight(1)
@@ -389,9 +390,24 @@ local function PricesPage(page)
   c.t1 = Text(c, "GameFontDisableSmall"); c.t1:SetPoint("TOPRIGHT", c, "BOTTOMRIGHT", 0, -3)
   c.empty = Text(c, "GameFontDisable"); c.empty:SetPoint("CENTER")
   c.cross = c:CreateTexture(nil, "OVERLAY"); c.cross:SetColorTexture(1, 1, 1, 0.35); c.cross:SetWidth(1); c.cross:Hide()
+  -- horizontal crosshair + a price tag on the right axis that follow the cursor
+  c.crossH = c:CreateTexture(nil, "OVERLAY"); c.crossH:SetColorTexture(1, 1, 1, 0.22); c.crossH:SetHeight(1); c.crossH:Hide()
+  local function AxisTag(accent)
+    local t = CreateFrame("Frame", nil, c, "BackdropTemplate"); Skin(t, 0.95)
+    t:SetSize(48, 14); t:Hide(); t:SetFrameStrata("HIGH")
+    t.text = Text(t, "GameFontHighlightSmall"); t.text:SetPoint("CENTER", 0, 0)
+    return t
+  end
+  c.axisTag = AxisTag()   -- hovered price
+  c.lastTag = AxisTag()   -- latest price (always on while data is shown)
   c:EnableMouse(true)
   c:SetScript("OnUpdate", function(self) if self.pts and self:IsMouseOver() then UI.ChartHover(self) end end)
-  c:SetScript("OnLeave", function(self) self.hoverIdx = nil; self.cross:Hide(); GameTooltip:Hide() end)
+  c:SetScript("OnLeave", function(self)
+    self.hoverIdx = nil; self.cross:Hide()
+    if self.crossH then self.crossH:Hide() end
+    if self.axisTag then self.axisTag:Hide() end
+    GameTooltip:Hide()
+  end)
   local function Drop()
     local kind, id = GetCursorInfo()
     if kind == "item" and id then

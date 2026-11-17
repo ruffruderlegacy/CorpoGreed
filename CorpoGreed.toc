@@ -2,7 +2,7 @@
 ## Title: |cff3987e5Corpo|rGreed
 ## Notes: Your own AH toolkit: full scans, price history, deals finder, sell/smelt/craft advisor, best crafts, shopping list, sales log.
 ## Author: Ruff
-## Version: 3.0
+## Version: 3.1
 ## OptionalDeps: Auctionator
 ## SavedVariables: CorpoGreedDB
 

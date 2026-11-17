@@ -62,7 +62,19 @@ end
 local page, widgets, profChecks, ignText = nil, {}, {}, nil
 
 local function Build(p)
-  page = p
+  -- scrollable page so the content never spills past the window at any size
+  local sf = CreateFrame("ScrollFrame", nil, p, "UIPanelScrollFrameTemplate")
+  sf:SetPoint("TOPLEFT", 0, 0); sf:SetPoint("BOTTOMRIGHT", -24, 0)
+  local child = CreateFrame("Frame", nil, sf)
+  child:SetSize(1, 540)  -- tall enough to hold both columns; scroll reveals the rest
+  sf:SetScrollChild(child)
+  sf:HookScript("OnSizeChanged", function(self, w) child:SetWidth(w) end)
+  sf:EnableMouseWheel(true)
+  sf:SetScript("OnMouseWheel", function(self, d)
+    local max = self:GetVerticalScrollRange()
+    self:SetVerticalScroll(math.min(max, math.max(0, self:GetVerticalScroll() - d * 30)))
+  end)
+  p = child; page = child  -- everything below anchors to the scroll child
   local st = function() return ns.db.settings end
   local LX, RX = 4, 400
 

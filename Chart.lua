@@ -104,6 +104,9 @@ function ns.DrawChart()
     c.empty:SetText(id and L["No history in this range yet."] or L["Pick an item on the left."]); c.empty:Show()
     c.hiTxt:SetText(""); c.loTxt:SetText(""); c.t0:SetText(""); c.t1:SetText(""); UI.sub:SetText("")
     for _, b in ipairs(UI.blocks) do b.text:SetText("") end
+    if c.lastTag then c.lastTag:Hide() end
+    if c.axisTag then c.axisTag:Hide() end
+    if c.crossH then c.crossH:Hide() end
     return
   end
   c.empty:Hide()
@@ -132,15 +135,27 @@ function ns.DrawChart()
   end
   local function X(t) if t1 == t0 then return 4 + W / 2 end return 4 + (t - t0) / (t1 - t0) * W end
   local function Y(v) return base + (v - lo) / (hi - lo) * PH end
-  c.X, c.pts, c.ma = X, pts, ma
+  c.X, c.Y, c.pts, c.ma, c.plotW = X, Y, pts, ma, W
 
   -- grid + price axis
   for k, g in ipairs(c.grid or {}) do
     local v = lo + (hi - lo) * g[2]
     g[1]:ClearAllPoints(); g[1]:SetPoint("BOTTOMLEFT", c, "BOTTOMLEFT", 0, Y(v)); g[1]:SetPoint("BOTTOMRIGHT", c, "BOTTOMLEFT", W + 8, Y(v)); g[1]:Show()
-    Label(c, ns.Money(v), -4, Y(v), "RIGHT")
+    Label(c, ns.Money(v), W + 10, Y(v), "LEFT") -- price axis on the right
   end
   c.hiTxt:SetText(""); c.loTxt:SetText("") -- the grid labels show the price axis now
+
+  -- vertical time gridlines + a couple of intermediate time labels
+  do
+    local ticks = 4
+    local fmt = range == 86400 and "%H:%M" or "%d %b"
+    for i = 1, ticks - 1 do
+      local frac = i / ticks
+      local tx = 4 + frac * W
+      Line(c, tx, base, tx, base + PH, 1, 1, 1, 0.05, 1)
+      Label(c, date(fmt, t0 + (t1 - t0) * frac), tx, -13, "CENTER", 0.55, 0.55, 0.6)
+    end
+  end
 
   -- listed quantity bars
   if volH > 0 then
@@ -205,6 +220,21 @@ function ns.DrawChart()
     end
   end
 
+  -- last traded price: a faint line across the chart + a colored tag on the right axis
+  do
+    local lastV = pts[#pts][2]
+    local up = (st.first or 0) > 0 and st.now >= st.first
+    local r, g, b = up and 0.44 or 1, up and 0.81 or 0.44, up and 0.56 or 0.38
+    Line(c, 4, Y(lastV), W + 4, Y(lastV), r, g, b, 0.55, 1)
+    if c.lastTag then
+      c.lastTag.text:SetText(ns.Money(lastV, true))
+      c.lastTag:ClearAllPoints(); c.lastTag:SetPoint("LEFT", c, "BOTTOMLEFT", W + 10, Y(lastV))
+      c.lastTag:SetBackdropColor(r * 0.45, g * 0.45, b * 0.45, 0.95)
+      c.lastTag:SetBackdropBorderColor(r, g, b, 1)
+      c.lastTag:Show()
+    end
+  end
+
   c.t0:SetText(date("%a %d %H:%M", pts[1][1])); c.t1:SetText(#pts > 1 and date("%a %d %H:%M", pts[#pts][1]) or "")
   local chg = ""
   if #pts > 1 and st.first > 0 then
@@ -231,6 +261,17 @@ function ns.ChartHover(c)
   c.hoverIdx = bi
   local p = c.pts[bi]
   c.cross:ClearAllPoints(); c.cross:SetPoint("BOTTOM", c, "BOTTOMLEFT", c.X(p[1]), 0); c.cross:SetHeight(c:GetHeight()); c.cross:Show()
+  -- horizontal crosshair at the hovered price + a readout on the right axis
+  if c.crossH and c.Y then
+    local yy = c.Y(p[2])
+    c.crossH:ClearAllPoints(); c.crossH:SetPoint("LEFT", c, "BOTTOMLEFT", 0, yy); c.crossH:SetWidth(c:GetWidth()); c.crossH:Show()
+    if c.axisTag then
+      c.axisTag.text:SetText(ns.Money(p[2], true))
+      c.axisTag:ClearAllPoints(); c.axisTag:SetPoint("LEFT", c, "BOTTOMLEFT", (c.plotW or (c:GetWidth() - 8)) + 10, yy)
+      c.axisTag:SetBackdropColor(0.1, 0.1, 0.12, 0.98); c.axisTag:SetBackdropBorderColor(0.6, 0.6, 0.65, 1)
+      c.axisTag:Show()
+    end
+  end
   GameTooltip:SetOwner(c, "ANCHOR_CURSOR")
   GameTooltip:AddLine(ns.Money(p[2]), 1, 1, 1)
   GameTooltip:AddLine(date("%a %d %b  %H:%M", p[1]), 0.7, 0.7, 0.7)
