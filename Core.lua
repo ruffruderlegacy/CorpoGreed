@@ -227,6 +227,9 @@ ev:SetScript("OnEvent", function(_, e, arg)
     db.ignore = db.ignore or {}
     db.shop = db.shop or {}
     db.deals = db.deals or {}
+    db.favs = db.favs or {}       -- favourite items shown on the Prices tab: { [id] = true }
+    db.lists = db.lists or {}     -- custom item lists: { ["Resources"] = { [id] = true }, ... }
+    db.flips = db.flips or {}     -- flip/conversion calculators: { { name, inputs={{id,qty}}, outputs={{id,qty}} }, ... }
     if db.range then db.settings.range = db.range; db.range = nil end
     if not db.watch then
       db.watch = {}

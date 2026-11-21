@@ -167,10 +167,93 @@ end
 
 function UI.ItemMenu(id, extra)
   local entries = extra or {}
+  -- favourite toggle (favouriting also tracks, so the chart stays fed)
+  table.insert(entries, { ns.db.favs[id] and L["Remove from favourites"] or L["Add to favourites"], function()
+    ns.db.favs[id] = not ns.db.favs[id] or nil
+    if ns.db.favs[id] then ns.db.watch[id] = true end
+    UI.Refresh()
+  end })
+  -- toggle membership of each custom list
+  local names = {}
+  for n in pairs(ns.db.lists) do names[#names + 1] = n end
+  table.sort(names)
+  for _, n in ipairs(names) do
+    local inlist = ns.db.lists[n][id]
+    table.insert(entries, { (inlist and "|cff6fcf8f* |r" or "|cff808080+ |r") .. n, function()
+      if inlist then ns.db.lists[n][id] = nil
+      else ns.db.lists[n][id] = true; ns.db.watch[id] = true end
+      UI.Refresh()
+    end })
+  end
+  table.insert(entries, { L["New list..."], function() UI.NewListPopup(id) end })
   table.insert(entries, { ns.IsIgnored(id) and L["Stop ignoring"] or L["Ignore this item"], function() ns.ToggleIgnore(id) end })
   table.insert(entries, { ns.db.watch[id] and L["Stop tracking price"] or L["Track price"], function() ns.db.watch[id] = not ns.db.watch[id] or nil; UI.Refresh() end })
   table.insert(entries, { L["Search on AH"], function() UI.SearchAH(ns.ItemInfo(id)) end })
   UI.Menu(entries)
+end
+
+-- popup to create a new custom list; addId (optional) is dropped into the new list
+function UI.NewListPopup(addId)
+  StaticPopupDialogs["CORPOGREED_NEWLIST"] = StaticPopupDialogs["CORPOGREED_NEWLIST"] or {
+    text = L["Name your new list:"],
+    button1 = ACCEPT, button2 = CANCEL,
+    hasEditBox = true, maxLetters = 24,
+    OnAccept = function(self)
+      local name = (self.editBox:GetText() or ""):gsub("^%s+", ""):gsub("%s+$", "")
+      if name == "" or name == "all" or name == "fav" then return end
+      ns.db.lists[name] = ns.db.lists[name] or {}
+      if self.data then ns.db.lists[name][self.data] = true; ns.db.watch[self.data] = true end
+      ns.db.settings.list = "list:" .. name
+      UI.RefreshPrices()
+    end,
+    EditBoxOnEnterPressed = function(self) local p = self:GetParent(); if p.button1 then p.button1:Click() end end,
+    EditBoxOnEscapePressed = function(self) self:GetParent():Hide() end,
+    timeout = 0, whileDead = true, hideOnEscape = true,
+  }
+  local dlg = StaticPopup_Show("CORPOGREED_NEWLIST")
+  if dlg then dlg.data = addId end
+end
+
+-- popup to rename a list
+function UI.RenameListPopup(old)
+  StaticPopupDialogs["CORPOGREED_RENAMELIST"] = {
+    text = L["Rename list to:"],
+    button1 = ACCEPT, button2 = CANCEL,
+    hasEditBox = true, maxLetters = 24,
+    OnShow = function(self) self.editBox:SetText(self.data or "") end,
+    OnAccept = function(self)
+      local name = (self.editBox:GetText() or ""):gsub("^%s+", ""):gsub("%s+$", "")
+      if name == "" or name == self.data or not ns.db.lists[self.data] then return end
+      ns.db.lists[name] = ns.db.lists[self.data]; ns.db.lists[self.data] = nil
+      if ns.db.settings.list == "list:" .. self.data then ns.db.settings.list = "list:" .. name end
+      UI.RefreshPrices()
+    end,
+    EditBoxOnEnterPressed = function(self) local p = self:GetParent(); if p.button1 then p.button1:Click() end end,
+    timeout = 0, whileDead = true, hideOnEscape = true,
+  }
+  local dlg = StaticPopup_Show("CORPOGREED_RENAMELIST")
+  if dlg then dlg.data = old end
+end
+
+-- right-click menu on a list chip: rename / delete
+function UI.ListChipMenu(name)
+  UI.Menu({
+    { L["Rename list"], function() UI.RenameListPopup(name) end },
+    { L["Delete list"], function()
+      StaticPopupDialogs["CORPOGREED_DELLIST"] = {
+        text = L["Delete the list \"%s\"? (items stay tracked)"],
+        button1 = YES, button2 = NO,
+        OnAccept = function(self)
+          ns.db.lists[self.data] = nil
+          if ns.db.settings.list == "list:" .. self.data then ns.db.settings.list = nil end
+          UI.RefreshPrices()
+        end,
+        timeout = 0, whileDead = true, hideOnEscape = true,
+      }
+      local dlg = StaticPopup_Show("CORPOGREED_DELLIST", name)
+      if dlg then dlg.data = name end
+    end },
+  })
 end
 
 function UI.Dot(tex, hex)
@@ -336,8 +419,13 @@ local function PricesPage(page)
   search.ph = Text(search, "GameFontDisableSmall"); search.ph:SetPoint("LEFT", 6, 0); search.ph:SetText(L["Search tracked items..."])
   UI.search = search
 
+  -- list-filter chips: All / Favs / custom lists / +  (wraps to a second row if needed)
+  local chipBar = CreateFrame("Frame", nil, page)
+  chipBar:SetPoint("TOPLEFT", search, "BOTTOMLEFT", 0, -4); chipBar:SetSize(220, 20)
+  UI.chipBar, UI.chips = chipBar, {}
+
   local box = CreateFrame("Frame", nil, page, "BackdropTemplate"); Skin(box, 0.35)
-  box:SetPoint("TOPLEFT", search, "BOTTOMLEFT", 0, -4); box:SetPoint("BOTTOMLEFT", 0, 0); box:SetWidth(220)
+  box:SetPoint("TOPLEFT", chipBar, "BOTTOMLEFT", 0, -4); box:SetPoint("BOTTOMLEFT", 0, 0); box:SetWidth(220)
   UI.priceList = ScrollList(box, 22, function(r)
     r.icon = r:CreateTexture(nil, "ARTWORK"); r.icon:SetSize(18, 18); r.icon:SetPoint("LEFT", 3, 0)
     r.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
@@ -345,14 +433,15 @@ local function PricesPage(page)
     r.price = Text(r); r.price:SetPoint("RIGHT", -4, 0); r.price:SetJustifyH("RIGHT")
     r:SetScript("OnClick", function(self, btn)
       if btn == "RightButton" then
-        ns.db.watch[self.item] = nil
-        ns.Print(ns.ColoredName(self.item) .. L[" untracked."])
-      else UI.selected = self.item end
+        UI.ItemMenu(self.item)
+        return
+      end
+      UI.selected = self.item
       UI.RefreshPrices()
     end)
     r:SetScript("OnEnter", function(self)
       GameTooltip:SetOwner(self, "ANCHOR_RIGHT"); GameTooltip:SetItemByID(self.item)
-      GameTooltip:AddLine(L["Right-click: stop tracking"], 0.6, 0.6, 0.6); GameTooltip:Show()
+      GameTooltip:AddLine(L["Right-click: favourite, lists, menu"], 0.6, 0.6, 0.6); GameTooltip:Show()
     end)
     r:SetScript("OnLeave", GameTooltip_Hide)
   end)
@@ -442,21 +531,75 @@ end
 function UI.ChartHover(c) if ns.ChartHover then ns.ChartHover(c) end end
 local function DrawChart() if ns.DrawChart then ns.DrawChart() end end
 
+-- (re)build the filter chips under the search box from favourites + custom lists
+function UI.RefreshListChips()
+  local bar = UI.chipBar
+  if not bar then return end
+  local cur = ns.db.settings.list or "all"
+  local defs = {
+    { key = "all", label = L["All"] },
+    { key = "fav", label = L["Favs"] },
+  }
+  local names = {}
+  for name in pairs(ns.db.lists) do names[#names + 1] = name end
+  table.sort(names)
+  for _, name in ipairs(names) do defs[#defs + 1] = { key = "list:" .. name, label = name, list = name } end
+  defs[#defs + 1] = { key = "new", label = "+" }
+
+  local x, y, rowH, maxW = 0, 0, 20, 220
+  for i, d in ipairs(defs) do
+    local chip = UI.chips[i]
+    if not chip then
+      chip = UI.Button(bar, "", 20, 17)
+      chip:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+      UI.chips[i] = chip
+    end
+    chip.text:SetText(d.label)
+    local w = math.max(math.floor(chip.text:GetStringWidth() + 0.5) + 14, 20)
+    if x > 0 and x + w > maxW then x = 0; y = y - rowH end
+    chip:ClearAllPoints(); chip:SetPoint("TOPLEFT", x, y); chip:SetWidth(w)
+    x = x + w + 3
+    chip:SetActive(cur == d.key)
+    chip:SetScript("OnClick", function(_, btn)
+      if d.key == "new" then
+        UI.NewListPopup()
+      elseif btn == "RightButton" and d.list then
+        UI.ListChipMenu(d.list)
+      else
+        ns.db.settings.list = (d.key == "all") and nil or d.key
+        UI.RefreshPrices()
+      end
+    end)
+    chip:Show()
+  end
+  for i = #defs + 1, #UI.chips do UI.chips[i]:Hide() end
+  bar:SetHeight(rowH - y)
+end
+
 function UI.RefreshPrices()
   if not (UI.priceList and UI.blocks and #UI.blocks == 4) then return end
   local q = (UI.search:GetText() or ""):lower()
   UI.search.ph:SetShown(q == "" and not UI.search:HasFocus())
+  -- pick the item source from the active filter chip
+  local sel = ns.db.settings.list
+  if sel and sel:match("^list:") and not ns.db.lists[sel:sub(6)] then ns.db.settings.list, sel = nil, nil end
+  local source = ns.db.watch
+  if sel == "fav" then source = ns.db.favs
+  elseif sel and sel:match("^list:") then source = ns.db.lists[sel:sub(6)] or ns.db.watch end
+  UI.RefreshListChips()
   local ids = {}
-  for id in pairs(ns.db.watch) do
+  for id in pairs(source) do
     if q == "" or ns.ItemInfo(id):lower():find(q, 1, true) then ids[#ids + 1] = id end
   end
   table.sort(ids, function(a, b) return ns.ItemInfo(a) < ns.ItemInfo(b) end)
+  -- keep the charted item valid for the current filter
+  if UI.selected and not source[UI.selected] then UI.selected = nil end
   if not UI.selected then UI.selected = ids[1] end
   UI.priceIds = ids
   if ns.SyncChartToggles then ns.SyncChartToggles() end
   UI.priceList:Set(ids, function(r, id)
     r.icon:SetTexture(ns.Icon(id))
-    r.name:SetText(ns.ColoredName(id))
+    r.name:SetText((ns.db.favs[id] and "|cffffd100*|r" or "") .. ns.ColoredName(id))
     local p = ns.Price(id)
     r.price:SetText(p and ns.Money(p) or "|cff808080-|r")
     r.sel:SetShown(UI.selected == id)
