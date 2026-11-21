@@ -60,17 +60,18 @@ local function ProcessReplicate()
     if ns.scanFrame then ns.scanFrame:SetProgress(i / n) end
     if i < n then C_Timer.After(0, step) return end
     local now, items, deals = time(), 0, 0
+    local pool = ns.CurrentPool()
     ns.db.deals = {}
     for id, ladder in pairs(ladders) do
       local minP, qty, market, deal = Analyze(id, ladder)
       ns.db.deals[id] = deal
       if deal then deals = deals + 1 end
-      ns.RecordPrice(id, math.floor(minP + 0.5), qty, now, true, math.floor(market + 0.5))
+      ns.RecordPrice(id, math.floor(minP + 0.5), qty, now, true, math.floor(market + 0.5), pool)
       items = items + 1
     end
     ns.db.lastFullScan = now
     processing, lastProcessed, waitingSince = false, now, nil
-    ns.Print((L["full scan done: %d auctions, %d items priced, |cff6fcf8f%d deals|r found."]):format(n, items, deals))
+    ns.Print((L["full scan done: %d auctions, %d items priced, |cff6fcf8f%d deals|r found."]):format(n, items, deals) .. (pool == "neutral" and L["  |cffffd100[Neutral AH]|r"] or ""))
     ns.Fire("PricesUpdated", "scan")
     ns.Fire("ScanDone")
   end
@@ -83,7 +84,7 @@ function ns.FullScan()
   if left > 0 then ns.Warn((L["Full scan is on cooldown for %d:%02d (Blizzard limit)."]):format(math.floor(left / 60), left % 60)); return end
   waitingSince = time()
   C_AuctionHouse.ReplicateItems()
-  ns.Print(L["full scan started - this can take a minute, keep the AH open."])
+  ns.Print(L["full scan started - this can take a minute, keep the AH open."] .. (ns.CurrentPool() == "neutral" and L["  |cffffd100[Neutral AH]|r"] or ""))
   ns.Fire("ScanStarted")
   C_Timer.After(90, function()
     if waitingSince and not processing and time() - waitingSince >= 89 then
@@ -114,11 +115,12 @@ end
 
 local function RecordBrowse(list)
   if not list then return end
+  local pool = ns.CurrentPool()
   -- a specific search returns few results; only auto-track those (not a broad 100-item browse)
   local track = #list <= 25
   for _, r in ipairs(list) do
     if r.itemKey and r.minPrice and r.minPrice > 0 then
-      ns.RecordPrice(r.itemKey.itemID, r.minPrice, r.totalQuantity)
+      ns.RecordPrice(r.itemKey.itemID, r.minPrice, r.totalQuantity, nil, nil, nil, pool)
       if track then ns.AutoTrack(r.itemKey.itemID) end
     end
   end
@@ -153,7 +155,7 @@ ev:SetScript("OnEvent", function(_, e, arg)
     if #ladder > 0 then
       local minP, qty, market, deal = Analyze(id, ladder)
       ns.db.deals[id] = deal
-      ns.RecordPrice(id, minP, C_AuctionHouse.GetCommoditySearchResultsQuantity(id) or qty, nil, false, math.floor(market + 0.5))
+      ns.RecordPrice(id, minP, C_AuctionHouse.GetCommoditySearchResultsQuantity(id) or qty, nil, false, math.floor(market + 0.5), ns.CurrentPool())
       ns.AutoTrack(id)
       PassiveChanged()
     end
@@ -170,7 +172,7 @@ ev:SetScript("OnEvent", function(_, e, arg)
     if #ladder > 0 and key and key.itemID then
       local minP, qty, market, deal = Analyze(key.itemID, ladder)
       ns.db.deals[key.itemID] = deal
-      ns.RecordPrice(key.itemID, math.floor(minP + 0.5), #ladder, nil, false, math.floor(market + 0.5))
+      ns.RecordPrice(key.itemID, math.floor(minP + 0.5), #ladder, nil, false, math.floor(market + 0.5), ns.CurrentPool())
       ns.AutoTrack(key.itemID)
       PassiveChanged()
     end

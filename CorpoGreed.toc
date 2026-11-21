@@ -1,8 +1,8 @@
 ## Interface: 16001
 ## Title: |cff3987e5Corpo|rGreed
-## Notes: Your own AH toolkit: full scans, price history, deals finder, sell/smelt/craft advisor, best crafts, favourites & custom lists, flip calculator, shopping list, sales log.
+## Notes: Your own AH toolkit: full scans, price history, home & neutral auction pools, deals finder, sell/smelt/craft advisor, best crafts, favourites & custom lists, flip calculator, shopping list, sales log.
 ## Author: Ruff
-## Version: 3.3
+## Version: 3.4
 ## OptionalDeps: Auctionator
 ## SavedVariables: CorpoGreedDB
 

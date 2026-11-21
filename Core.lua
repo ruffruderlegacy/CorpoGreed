@@ -107,24 +107,51 @@ function ns.IsHistoried(id)
   return ns.db.watch[id] or ns.craftItems[id]
 end
 
--- market = "typical" price (cheapest 20% of supply averaged), robust against one dumped stack
-function ns.RecordPrice(id, price, qty, t, forcePoint, market)
-  if not id or not price or price <= 0 then return end
+-- Auction pools: your faction AH ("home") vs the neutral goblin AH ("neutral").
+-- Forever serves different prices at the goblin auctioneers, so we keep a parallel
+-- set of stores for the neutral AH and let the chart switch between them.
+ns.NEUTRAL_AH = { ["Booty Bay"] = true, ["Gadgetzan"] = true, ["Everlook"] = true }
+function ns.CurrentPool()
+  local z = GetSubZoneText and GetSubZoneText() or ""
+  if ns.NEUTRAL_AH[z] then return "neutral" end
+  local mz = GetMinimapZoneText and GetMinimapZoneText() or ""
+  if ns.NEUTRAL_AH[mz] then return "neutral" end
+  return "home"
+end
+
+-- the (prices, daily, hist) tables for a pool. "home" returns the original top-level
+-- tables (so existing data and every other reader keep working unchanged); "neutral"
+-- returns parallel n* tables, created on first use.
+local function PoolStores(pool)
   local db = ns.db
+  if pool == "neutral" then
+    db.nprices = db.nprices or {}
+    db.ndaily = db.ndaily or {}
+    db.nhist = db.nhist or {}
+    return db.nprices, db.ndaily, db.nhist
+  end
+  return db.prices, db.daily, db.hist
+end
+ns.PoolStores = PoolStores
+
+-- market = "typical" price (cheapest 20% of supply averaged), robust against one dumped stack
+function ns.RecordPrice(id, price, qty, t, forcePoint, market, pool)
+  if not id or not price or price <= 0 then return end
   t = t or time()
-  local prev = db.prices[id]
-  db.prices[id] = { t = t, p = price, q = qty or (prev and prev.q), m = market or (prev and t - prev.t < 3600 and prev.m) or nil }
+  local P, D, H = PoolStores(pool)
+  local prev = P[id]
+  P[id] = { t = t, p = price, q = qty or (prev and prev.q), m = market or (prev and t - prev.t < 3600 and prev.m) or nil }
   local day = math.floor(t / 86400)
-  db.daily[id] = db.daily[id] or {}
-  local d = db.daily[id]
+  D[id] = D[id] or {}
+  local d = D[id]
   if type(d[day]) ~= "table" then d[day] = { lo = price, mk = market or price } end
   local e = d[day]
   if price < e.lo then e.lo = price end
   if market then e.mk = market elseif not e.hasMk then e.mk = price end
   if market then e.hasMk = true end
   if ns.IsHistoried(id) then
-    db.hist[id] = db.hist[id] or {}
-    local h = db.hist[id]
+    H[id] = H[id] or {}
+    local h = H[id]
     local last = h[#h]
     if not last or last[2] ~= price or forcePoint and t - last[1] >= 1800 then
       h[#h + 1] = { t, price, qty }
@@ -137,22 +164,34 @@ end
 
 function ns.PruneDaily()
   local cutoff = ns.Today() - 60
-  for _, d in pairs(ns.db.daily) do
-    for day, e in pairs(d) do
-      if day < cutoff or type(e) ~= "table" then d[day] = nil end -- also drops v0.2 number format
+  local function prune(store)
+    if not store then return end
+    for _, d in pairs(store) do
+      for day, e in pairs(d) do
+        if day < cutoff or type(e) ~= "table" then d[day] = nil end -- also drops v0.2 number format
+      end
     end
   end
+  prune(ns.db.daily)
+  prune(ns.db.ndaily)
 end
 
--- Current price: own data first, Auctionator as fallback if it is still installed.
-function ns.Price(id)
-  local p = ns.db.prices[id]
+-- Current price for a pool: own data first, Auctionator as a fallback on the home pool.
+function ns.PoolPrice(id, pool)
+  local P = PoolStores(pool)
+  local p = P[id]
   if p then return p.p, p.q, p.t end
-  if Auctionator and Auctionator.API and Auctionator.API.v1 then
+  if pool ~= "neutral" and Auctionator and Auctionator.API and Auctionator.API.v1 then
     local ok, v = pcall(Auctionator.API.v1.GetAuctionPriceByItemID, "CorpoGreed", id)
     if ok and v then return v end
   end
 end
+
+-- Current price on your home (faction) AH - the default used everywhere.
+function ns.Price(id) return ns.PoolPrice(id, "home") end
+
+-- which auction pool the Prices chart is currently showing
+function ns.ChartPool() return ns.db.settings.chartPool or "home" end
 
 -- Cheapest way to get a reagent: vendor (if we've seen it on a merchant) or AH.
 function ns.BuyCost(id)
@@ -162,8 +201,9 @@ function ns.BuyCost(id)
   return ah, ah and "ah"
 end
 
-function ns.Stats(id, since)
-  local h = ns.db.hist[id]
+function ns.Stats(id, since, pool)
+  local _, _, H = PoolStores(pool)
+  local h = H[id]
   local pts = {}
   if h then for _, p in ipairs(h) do if not since or p[1] >= since then pts[#pts + 1] = p end end end
   if #pts == 0 then return nil end

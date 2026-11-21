@@ -98,10 +98,15 @@ function ns.DrawChart()
   local id = UI.selected
   local rangeIdx = ns.db.settings.range or 3
   local range = RANGES[rangeIdx]
-  local st = id and ns.Stats(id, range and time() - range)
-  if id then UI.header:SetText(ns.ColoredName(id) .. "   " .. ns.Money((ns.Price(id)))) else UI.header:SetText("") end
+  local pool = ns.ChartPool()
+  if UI.chartPoolBtn then UI.chartPoolBtn:SetText(pool == "neutral" and L["AH: Neutral"] or L["AH: Home"]) end
+  local st = id and ns.Stats(id, range and time() - range, pool)
+  if id then
+    local tag = pool == "neutral" and "  |cffffd100[Neutral]|r" or ""
+    UI.header:SetText(ns.ColoredName(id) .. "   " .. ns.Money((ns.PoolPrice(id, pool))) .. tag)
+  else UI.header:SetText("") end
   if not st then
-    c.empty:SetText(id and L["No history in this range yet."] or L["Pick an item on the left."]); c.empty:Show()
+    c.empty:SetText(id and (pool == "neutral" and L["No Neutral AH history yet - scan at Booty Bay / Gadgetzan / Everlook."] or L["No history in this range yet."]) or L["Pick an item on the left."]); c.empty:Show()
     c.hiTxt:SetText(""); c.loTxt:SetText(""); c.t0:SetText(""); c.t1:SetText(""); UI.sub:SetText("")
     for _, b in ipairs(UI.blocks) do b.text:SetText("") end
     if c.lastTag then c.lastTag:Hide() end
@@ -241,7 +246,7 @@ function ns.DrawChart()
     local d = (st.now - st.first) / st.first * 100
     chg = (d > 0 and "|cff6fcf8f+%d%%|r" or d < 0 and "|cffff6f61%d%%|r" or "%d%%"):format(math.floor(d + 0.5)) .. L[" in range   "]
   end
-  local _, q = ns.Price(id)
+  local _, q = ns.PoolPrice(id, pool)
   UI.sub:SetText(chg .. (L["low %s   avg %s   high %s%s"]):format(ns.Money(st.lo), ns.Money(st.avg), ns.Money(st.hi),
     q and ("  -  " .. q .. L[" listed"]) or ""))
   for i, b in ipairs(UI.blocks) do
@@ -316,6 +321,13 @@ function ns.BuildChartControls(right)
     UI.chartToggles[#UI.chartToggles + 1] = b
     prev = b
   end
+  -- auction-pool selector: switch the chart between your home AH and the neutral goblin AH
+  local poolB = UI.Button(right, L["AH: Home"], 92, 18, function()
+    ns.db.settings.chartPool = (ns.ChartPool() == "home") and "neutral" or "home"
+    UI.RefreshPrices()
+  end)
+  poolB:SetPoint("RIGHT", prev, "LEFT", -8, 0)
+  UI.chartPoolBtn = poolB
   local nextB = UI.Button(right, ">", 22, 18, function() UI.SelectRelative(1) end)
   nextB:SetPoint("RIGHT", UI.rangeBtns[1], "LEFT", -8, 0)
   local prevB = UI.Button(right, "<", 22, 18, function() UI.SelectRelative(-1) end)
